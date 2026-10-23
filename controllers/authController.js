@@ -49,7 +49,14 @@ exports.login = async (req, res) => {
             return res.status(403).json({ message: 'Akun nonaktif. Hubungi HR.' });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
+        // PSI-256: accounts provisioned from psi.hris carry PHP's $2y$ bcrypt
+        // marker; $2y$ and $2b$ are the same algorithm, so normalize before
+        // comparing (node bcrypt rejects the $2y$ prefix outright).
+        const storedHash = user.password.startsWith('$2y$')
+            ? '$2b$' + user.password.slice(4)
+            : user.password;
+
+        const isMatch = await bcrypt.compare(password, storedHash);
         if (!isMatch) {
             return res.status(401).json({ message: 'Password salah!' });
         }
