@@ -43,6 +43,12 @@ exports.login = async (req, res) => {
 
         const user = users[0];
 
+        // PSI-256: accounts provisioned from psi.hris are disabled when the
+        // peserta is set Tidak Aktif there; the API refuses them on login.
+        if (user.is_active === 0) {
+            return res.status(403).json({ message: 'Akun nonaktif. Hubungi HR.' });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(401).json({ message: 'Password salah!' });
