@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-// --- FUNGSI REGISTER ---
+// --- FUNGSI REGISTER (HRD-gated; see routes/authRoutes.js) ---
 exports.register = async (req, res) => {
     const { nip, name, password, role } = req.body;
 
@@ -18,8 +18,7 @@ exports.register = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Masukin data ke database
-        const userRole = role || 'karyawan'; // Default karyawan kalau gak diisi
+        const userRole = role || 'karyawan';
         await db.query(
             'INSERT INTO users (nip, name, password, role) VALUES (?, ?, ?, ?)',
             [nip, name, hashedPassword, userRole]
@@ -33,68 +32,52 @@ exports.register = async (req, res) => {
 
 // --- FUNGSI LOGIN ---
 exports.login = async (req, res) => {
-    const { nip, password } = req.body;
-
     try {
-        // Cari user berdasarkan NIP
+        const { nip, password } = req.body;
+
         const [users] = await db.query('SELECT * FROM users WHERE nip = ?', [nip]);
+
         if (users.length === 0) {
-            return res.status(404).json({ message: 'NIP tidak ditemukan!' });
+            return res.status(401).json({ message: 'NIP tidak ditemukan!' });
         }
 
         const user = users[0];
 
-        // Cek kecocokan password
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(401).json({ message: 'Password salah!' });
         }
 
-        // Bikin token JWT (berlaku 1 hari)
+        // Env-only secret (audit fix d): index.js already fails closed without it
         const token = jwt.sign(
             { id: user.id, nip: user.nip, role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: '1d' }
         );
 
-        res.json({
-            message: 'Login sukses!',
+        res.status(200).json({
+            message: 'Login berhasil',
             token: token,
-            user: { id: user.id, name: user.name, role: user.role }
+            user: {
+                id: user.id,
+                nip: user.nip,
+                name: user.name,
+                role: user.role
+            }
         });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+
+    } catch (err) {
+        res.status(500).json({ message: 'Server error saat login', error: err.message });
     }
 };
 
-
-exports.clockIn = async (req, res) => {
-    // Data ini nanti dikirim dari HP (Flutter)
-    const { latitude, longitude, photo_url } = req.body;
-    const userId = req.user.id; // Didapet dari middleware Satpam tadi
-
+exports.getAllUsers = async (req, res) => {
     try {
-        // Cek apakah hari ini udah absen masuk (biar gak double)
-        const [existing] = await db.query(
-            'SELECT * FROM attendances WHERE user_id = ? AND DATE(clock_in_time) = CURDATE()',
-            [userId]
+        const [users] = await db.query(
+            'SELECT id, nip, name, role FROM users ORDER BY created_at DESC'
         );
 
-        if (existing.length > 0) {
-            return res.status(400).json({ message: 'Lu udah absen masuk hari ini cuy!' });
-        }
-
-        // Tentukan status terlambat atau hadir (Misal batas masuk jam 08:00)
-        // Buat MVP kita set 'hadir' dulu defaultnya
-        const status = 'hadir';
-
-        // Simpan ke database
-        await db.query(
-            'INSERT INTO attendances (user_id, clock_in_time, latitude, longitude, photo_url, status) VALUES (?, NOW(), ?, ?, ?, ?)',
-            [userId, latitude, longitude, photo_url, status]
-        );
-
-        res.status(201).json({ message: 'Absen masuk berhasil direkam!' });
+        res.status(200).json({ message: 'Berhasil mengambil data karyawan', data: users });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
