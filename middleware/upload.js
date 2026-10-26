@@ -1,5 +1,6 @@
 const multer = require('multer');
 const path   = require('path');
+const crypto = require('crypto');
 
 // Upload whitelist (audit fix e): selfie images only, max 5MB
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
@@ -10,9 +11,9 @@ const storage = multer.diskStorage({
         cb(null, path.join(__dirname, '../uploads/selfie'));
     },
     filename: (req, file, cb) => {
-        const timestamp = Date.now();
-        const ext       = path.extname(file.originalname) || '.jpg';
-        cb(null, `selfie_${timestamp}${ext}`);
+        // Random, non-guessable name (PSI-256 #12): no timestamp enumeration
+        const ext = path.extname(file.originalname) || '.jpg';
+        cb(null, `selfie_${crypto.randomUUID()}${ext}`);
     },
 });
 
