@@ -123,11 +123,12 @@ describe('audit fix (d): JWT secret handling', () => {
   }, 15000);
 });
 
-// (e) Uploads must be type/size restricted
+// (e) Uploads must be type/size restricted (via the real clock-in endpoint;
+// the /test-upload debug route was removed in PSI-256 #12)
 describe('audit fix (e): upload validation', () => {
   test('text file upload is rejected with 400', async () => {
     const res = await request(app)
-      .post('/test-upload')
+      .post('/api/attendance/clock-in')
       .set('Authorization', `Bearer ${karToken}`)
       .attach('selfie', Buffer.from('<html>x</html>'), { filename: 'evil.html', contentType: 'text/html' });
     expect(res.status).toBe(400);
@@ -135,10 +136,33 @@ describe('audit fix (e): upload validation', () => {
 
   test('jpg upload is accepted', async () => {
     const res = await request(app)
-      .post('/test-upload')
+      .post('/api/attendance/clock-in')
       .set('Authorization', `Bearer ${karToken}`)
       .attach('selfie', Buffer.alloc(64, 0xff), { filename: 'ok.jpg', contentType: 'image/jpeg' });
+    expect(res.status).toBe(201);
+  });
+});
+
+// (g) PSI-256 #12: /uploads is private and the debug route is gone
+describe('fix #12: uploads gated behind auth', () => {
+  test('unauthenticated GET /uploads is rejected with 401', async () => {
+    const res = await request(app).get('/uploads/selfie/selfie_1781665596993.jpg');
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBeDefined();
+  });
+
+  test('authenticated GET /uploads serves the file', async () => {
+    const res = await request(app)
+      .get('/uploads/selfie/selfie_1781665596993.jpg')
+      .set('Authorization', `Bearer ${karToken}`);
     expect(res.status).toBe(200);
+  });
+
+  test('POST /test-upload is gone (404)', async () => {
+    const res = await request(app)
+      .post('/test-upload')
+      .set('Authorization', `Bearer ${karToken}`);
+    expect(res.status).toBe(404);
   });
 });
 

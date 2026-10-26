@@ -1,7 +1,7 @@
 const express = require('express');
 const dotenv  = require('dotenv');
 const path = require('path');
-const upload = require('./middleware/upload'); // validated: jpg/png/webp, 5MB cap
+const authMiddleware = require('./middleware/authMiddleware'); // gates /uploads (PSI-256 #12)
 
 dotenv.config();
 
@@ -27,7 +27,8 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Uploads are private: serve only with a valid JWT (PSI-256 #12)
+app.use('/uploads', authMiddleware, express.static(path.join(__dirname, 'uploads')));
 
 // Routes Asli
 const authRoutes       = require('./routes/authRoutes');
@@ -44,12 +45,6 @@ app.use('/api/settings',   settingsRoutes); // Rute baru dipasang
 app.get('/', (req, res) => res.send('PresensIKu API is running 🚀'));
 
 const PORT = process.env.PORT || 3000;
-
-app.post('/test-upload', upload.single('selfie'), (req, res) => {
-    console.log('file:', req.file);
-    console.log('body:', req.body);
-    res.json({ file: req.file, body: req.body });
-});
 
 // Upload validation errors are client errors (audit fix e)
 app.use((err, req, res, next) => {
