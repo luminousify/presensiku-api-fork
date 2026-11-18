@@ -6,6 +6,7 @@
 const request = require('supertest');
 const bcrypt = require('bcrypt');
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 
@@ -145,15 +146,29 @@ describe('audit fix (e): upload validation', () => {
 
 // (g) PSI-256 #12: /uploads is private and the debug route is gone
 describe('fix #12: uploads gated behind auth', () => {
+  // Self-contained fixture: the auth gate is under test, not an upload
+  // that happened to exist on someone's disk.
+  const FIXTURE_URL = 'uploads/selfie/selfie_fixture.jpg';
+  const FIXTURE_PATH = path.join(__dirname, '..', FIXTURE_URL);
+
+  beforeAll(() => {
+    fs.mkdirSync(path.dirname(FIXTURE_PATH), { recursive: true });
+    fs.writeFileSync(FIXTURE_PATH, Buffer.alloc(64, 0xff));
+  });
+
+  afterAll(() => {
+    fs.rmSync(FIXTURE_PATH, { force: true });
+  });
+
   test('unauthenticated GET /uploads is rejected with 401', async () => {
-    const res = await request(app).get('/uploads/selfie/selfie_1781665596993.jpg');
+    const res = await request(app).get(`/${FIXTURE_URL}`);
     expect(res.status).toBe(401);
     expect(res.body.message).toBeDefined();
   });
 
   test('authenticated GET /uploads serves the file', async () => {
     const res = await request(app)
-      .get('/uploads/selfie/selfie_1781665596993.jpg')
+      .get(`/${FIXTURE_URL}`)
       .set('Authorization', `Bearer ${karToken}`);
     expect(res.status).toBe(200);
   });
