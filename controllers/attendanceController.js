@@ -1,4 +1,10 @@
 const db = require('../config/db');
+// PSI-355: zkteco_logs sink (company attendance DB on 201)
+const {
+    ZK_TYPE_CHECK_OUT,
+    legacyWritesEnabled,
+    writeZktecoEvent,
+} = require('../utils/zkteco');
 // IMPORT GEOFENCE BIAR STATUSNYA OTOMATIS
 const { cekGeofence } = require('../utils/geofence'); 
 
@@ -112,7 +118,17 @@ exports.clockIn = async (req, res) => {
       VALUES (?, NOW(), ?, ?, ?, ?)
     `;
 
-    await db.query(sql, [userId, lat, lng, selfiePath, statusKehadiran]);
+    // Legacy presensiku@202 write stays behind the flag (default ON)
+    // until the zkteco_logs cutover is verified; removal is a follow-up.
+    if (legacyWritesEnabled()) {
+      await db.query(sql, [userId, lat, lng, selfiePath, statusKehadiran]);
+    }
+
+    // PSI-355: mirror the check-in into zkteco_logs (MySQL 201). The nip
+    // comes from users (authoritative), not the JWT.
+    const [nipRows] = await db.query('SELECT nip FROM users WHERE id = ?', [userId]);
+    await writeZktecoEvent({ nip: nipRows.length > 0 ? nipRows[0].nip : null });
+
     res.status(201).json({ message: `Absen berhasil! Status: ${statusKehadiran}` });
   } catch (err) {
     console.error('Error clock in:', err);
@@ -146,7 +162,16 @@ exports.clockOut = async (req, res) => {
       WHERE user_id = ? AND DATE(clock_in_time) = CURDATE()
     `;
 
-    await db.query(sql, [lat, lng, userId]);
+    // Legacy presensiku@202 write stays behind the flag (default ON);
+    // see clockIn. The check-out row lands as type/state 1 so the
+    // psi.hris view keeps a truthful pulang time (PSI-355).
+    if (legacyWritesEnabled()) {
+      await db.query(sql, [lat, lng, userId]);
+    }
+
+    const [nipRows] = await db.query('SELECT nip FROM users WHERE id = ?', [userId]);
+    await writeZktecoEvent({ nip: nipRows.length > 0 ? nipRows[0].nip : null, type: ZK_TYPE_CHECK_OUT });
+
     res.json({ message: 'Absen keluar berhasil dicatat!' });
   } catch (err) {
     console.error('Error clock out:', err);
